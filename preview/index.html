@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Throne v2.0.4 · Liquid Glass 视觉预览</title>
+<style>
+  :root{
+    --ink:#f2f3f7;
+    --ink-dim: rgba(242,243,247,.62);
+    --page:#0c0c10;
+    --noise: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='.5'/></svg>");
+  }
+  *{box-sizing:border-box; -webkit-font-smoothing:antialiased;}
+  html,body{margin:0;}
+  body{
+    background:
+      radial-gradient(70% 50% at 50% 0%, #1b1526 0%, #0c0c10 60%),
+      #0c0c10;
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Noto Sans SC","Segoe UI",Roboto,sans-serif;
+    padding:44px 32px 56px;
+  }
+  h1{font-size:22px; font-weight:600; letter-spacing:.2px; margin:0 0 6px;}
+  .sub{color:var(--ink-dim); font-size:13px; margin:0 0 34px; line-height:1.7;}
+  .row{display:flex; gap:38px; justify-content:center; align-items:flex-start; flex-wrap:wrap;}
+  .col{display:flex; flex-direction:column; align-items:center; gap:14px;}
+  .cap{font-size:12.5px; color:var(--ink-dim); text-align:center; line-height:1.6; max-width:330px;}
+  .cap b{color:#fff; font-weight:600;}
+
+  /* ---------- phone ---------- */
+  .phone{
+    position:relative; width:390px; height:844px; border-radius:46px;
+    overflow:hidden; isolation:isolate;
+    box-shadow:0 30px 70px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.09), inset 0 0 0 1px rgba(255,255,255,.05);
+    background:#0b0a10;
+  }
+  .wall{position:absolute; inset:0;}
+  .wall.dark{
+    background:
+      radial-gradient(120% 55% at 6% -2%, #8a2f57 0%, rgba(138,47,87,0) 62%),
+      radial-gradient(85% 45% at 104% 24%, #b8487c 0%, rgba(184,72,124,0) 58%),
+      radial-gradient(110% 60% at 32% 106%, #3a2a68 0%, rgba(58,42,104,0) 62%),
+      linear-gradient(180deg,#2b1222 0%, #170c18 62%, #0b0710 100%);
+  }
+  .wall.light{
+    background:
+      radial-gradient(120% 55% at 8% -4%, #ffd7e6 0%, rgba(255,215,230,0) 60%),
+      radial-gradient(85% 45% at 102% 22%, #f3cfe0 0%, rgba(243,207,224,0) 58%),
+      radial-gradient(110% 55% at 30% 106%, #dfe4ff 0%, rgba(223,228,255,0) 62%),
+      linear-gradient(180deg,#fbf7fa 0%, #f4eef4 60%, #eceaf3 100%);
+  }
+  .grain{position:absolute; inset:0; background-image:var(--noise); opacity:.035; mix-blend-mode:overlay; pointer-events:none;}
+
+  /* ---------- glass primitives ---------- */
+  .glass{
+    position:relative;
+    backdrop-filter: blur(26px) saturate(180%);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
+    border-radius:22px;
+    box-shadow:0 14px 34px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.22);
+  }
+  .glass::after{
+    content:""; position:absolute; inset:0; border-radius:inherit; padding:1px;
+    background:linear-gradient(140deg, rgba(255,255,255,.62), rgba(255,255,255,.04) 42%, rgba(255,255,255,.20));
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite:exclude;
+    pointer-events:none;
+  }
+  .chrome{
+    background:linear-gradient(180deg, rgba(122,48,84,.52) 0%, rgba(46,17,34,.74) 100%);
+  }
+  .card-dark{
+    background:linear-gradient(180deg, rgba(255,255,255,.105) 0%, rgba(24,10,20,.34) 100%);
+  }
+  .card-light{
+    background:linear-gradient(180deg, rgba(255,255,255,.78) 0%, rgba(255,255,255,.46) 100%);
+    box-shadow:0 10px 26px rgba(88,52,74,.14), inset 0 1px 0 rgba(255,255,255,.9);
+  }
+  .card-light::after{
+    background:linear-gradient(140deg, rgba(255,255,255,.95), rgba(255,255,255,.15) 45%, rgba(120,80,110,.16));
+  }
+
+  /* ---------- chrome ---------- */
+  .statusbar{
+    position:absolute; top:0; left:0; right:0; height:54px; display:flex; align-items:flex-end;
+    justify-content:space-between; padding:0 30px 8px; font-size:13.5px; font-weight:600; letter-spacing:.3px;
+    z-index:12; color:#fff;
+  }
+  .statusbar.dark-ink{color:#1a1118;}
+  .status-right{display:flex; gap:6px; align-items:center; opacity:.95;}
+  .bar{width:17px;height:11px;border:1.2px solid currentColor;border-radius:3px;position:relative;opacity:.9}
+  .bar::after{content:"";position:absolute;inset:1.5px;right:5px;background:currentColor;border-radius:1px}
+
+  .appbar{
+    position:absolute; top:0; left:0; right:0; height:108px; z-index:5;
+    display:flex; align-items:flex-end; padding:0 16px 12px 16px; gap:14px;
+    border-radius:0 0 0 0;
+  }
+  .appbar .title{font-size:19px; font-weight:600; letter-spacing:.2px; flex:1; color:#fff;}
+  .icon{
+    width:34px;height:34px;border-radius:11px; display:grid;place-items:center;
+    color:rgba(255,255,255,.92);
+  }
+  .icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+
+  .content{position:absolute; top:108px; bottom:104px; left:0; right:0; padding:6px 14px 24px; overflow:hidden; z-index:2;}
+  .content.light-ink{color:#241a20;}
+  .sec{font-size:12.5px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,.55); margin:16px 6px 9px;}
+  .sec.light{color:rgba(60,35,50,.55);}
+
+  .item{display:flex; align-items:center; gap:13px; padding:14px 16px; margin-bottom:9px;}
+  .dot{width:34px;height:34px;border-radius:12px; display:grid;place-items:center; font-size:13px; font-weight:700;
+       background:linear-gradient(160deg, rgba(255,255,255,.28), rgba(255,255,255,.10)); color:#fff;}
+  .dot.light{background:linear-gradient(160deg, rgba(255,255,255,.95), rgba(240,220,235,.8)); color:#8a2f57;}
+  .item .body{flex:1; min-width:0;}
+  .item .n{font-size:14.5px; font-weight:600; letter-spacing:.1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .item .m{font-size:12px; margin-top:3px; color:rgba(255,255,255,.55);}
+  .item .m.light{color:rgba(60,35,50,.55);}
+  .ping{font-size:12px; font-variant-numeric:tabular-nums; color:#6ee7a8; font-weight:600;}
+  .ping.warn{color:#ffd166;}
+  .chev{color:rgba(255,255,255,.35); font-size:16px;}
+
+  .hero{padding:16px 18px 18px;}
+  .hero-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .hero h3{margin:0; font-size:15px; font-weight:600;}
+  .pill{font-size:11px; padding:4px 9px; border-radius:999px; background:rgba(110,231,168,.16); color:#6ee7a8; font-weight:700;}
+  .stats{display:flex; gap:22px;}
+  .stat .k{font-size:11px; color:rgba(255,255,255,.5); letter-spacing:.3px;}
+  .stat .v{font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:3px;}
+  .spark{margin-top:14px; height:52px; border-radius:10px; overflow:hidden; position:relative;
+         background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0));}
+  .spark svg{position:absolute; inset:0; width:100%; height:100%;}
+
+  /* bottom bar */
+  .bottombar{
+    position:absolute; left:0; right:0; bottom:0; height:108px; z-index:5;
+    border-radius:22px 22px 0 0; padding:12px 26px 16px;
+    display:flex; justify-content:space-between; align-items:flex-start; gap:96px;
+  }
+  .bottombar .l{display:flex; flex-direction:column; gap:3px; line-height:1.3; font-size:12.5px; color:rgba(255,255,255,.9); font-variant-numeric:tabular-nums;}
+  .bottombar .r{display:flex; flex-direction:column; gap:3px; line-height:1.3; align-items:flex-end; font-size:12.5px; color:rgba(255,255,255,.9);}
+  .bottombar .h{font-size:10.5px; color:rgba(255,255,255,.5); letter-spacing:.4px;}
+
+  .fab{
+    position:absolute; left:50%; transform:translateX(-50%); bottom:76px; width:60px; height:60px; border-radius:50%; z-index:7;
+    display:grid; place-items:center; color:#fff;
+    box-shadow:0 16px 30px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.35);
+  }
+  .fab::after{border-radius:50%;}
+  .fab svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
+
+  /* drawer */
+  .scrim{position:absolute; inset:0; background:rgba(8,4,10,.42); z-index:8;}
+  .drawer{
+    position:absolute; top:0; bottom:0; left:0; width:300px; z-index:9; padding:64px 12px 20px;
+    border-radius:0 26px 26px 0;
+  }
+  .drawer .head{display:flex; align-items:center; gap:12px; padding:8px 10px 20px;}
+  .logo{width:44px;height:44px;border-radius:14px; display:grid; place-items:center; font-weight:800; font-size:16px;
+        background:linear-gradient(160deg,rgba(255,255,255,.35),rgba(255,255,255,.12)); color:#fff;}
+  .drawer .nm{font-size:15px;font-weight:600;}
+  .drawer .ver{font-size:11.5px;color:rgba(255,255,255,.55); margin-top:2px;}
+  .nav{display:flex; align-items:center; gap:14px; padding:12px 12px; border-radius:14px; font-size:14px; color:rgba(255,255,255,.86); margin-bottom:2px;}
+  .nav.active{background:rgba(255,255,255,.14); color:#fff; font-weight:600;}
+  .nav svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round; opacity:.9;}
+
+  /* dialog */
+  .dialog{
+    position:absolute; left:26px; right:26px; top:296px; z-index:10; padding:24px 22px 16px; border-radius:26px;
+  }
+  .dialog h4{margin:0 0 8px; font-size:17px; font-weight:600;}
+  .dialog p{margin:0; font-size:13.5px; line-height:1.65; color:rgba(255,255,255,.66);}
+  .dialog .acts{display:flex; justify-content:flex-end; gap:8px; margin-top:20px;}
+  .btn{font-size:13.5px; font-weight:600; padding:10px 16px; border-radius:12px; color:#ff9ec4;}
+  .btn.primary{background:rgba(255,158,196,.16); color:#ffc0d8;}
+
+  .footer{margin-top:40px; text-align:center; color:rgba(242,243,247,.4); font-size:12px; line-height:1.9;}
+</style>
+</head>
+<body>
+
+<h1>Throne v2.0.4 · Liquid Glass</h1>
+<p class="sub">原生 Android 复刻效果预览：着色器模糊底片 + 主题色染色 + 镜面高光描边。左起：主界面、设置、抽屉、弹窗（深色为主，浅色主题同一套令牌反转）。<br>
+预览用 CSS <code>backdrop-filter</code> 表达与 Kotlin <code>GlassDrawable</code> 相同的三层合成顺序，参数一致（模糊 26dp、染色 40–70%、描边 1dp）。</p>
+
+<div class="row">
+
+  <!-- ============ 1. main dark ============ -->
+  <div class="col">
+    <div class="phone">
+      <div class="wall dark"></div>
+      <div class="grain"></div>
+
+      <div class="statusbar">
+        <span>9:41</span>
+        <span class="status-right">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="currentColor" opacity=".95"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="4.5" y="5.5" width="3" height="6.5" rx="1"/><rect x="9" y="3" width="3" height="9" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1"/></svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".95"><path d="M1 4.2a10 10 0 0 1 14 0M3.4 6.8a6.6 6.6 0 0 1 9.2 0"/><circle cx="8" cy="9.9" r="1.1" fill="currentColor" stroke="none"/></svg>
+          <span class="bar"></span>
+        </span>
+      </div>
+
+      <div class="appbar glass chrome" style="border-radius:0;">
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+        <div class="title">Throne</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3H9.8l-.4 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2l.4 2.6h4.4l.4-2.6a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.06-.4.1-.8.1-1.2Z"/></svg></div>
+        <div class="icon"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></div>
+      </div>
+
+      <div class="content">
+        <div class="glass card-dark hero">
+          <div class="hero-top">
+            <h3>当前连接</h3>
+            <span class="pill">已连接 · 01:24:36</span>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="k">上传</div><div class="v">24.6 KB/s</div></div>
+            <div class="stat"><div class="k">下载</div><div class="v">1.28 MB/s</div></div>
+            <div class="stat"><div class="k">延迟</div><div class="v">38 ms</div></div>
+          </div>
+          <div class="spark">
+            <svg viewBox="0 0 320 52" preserveAspectRatio="none">
+              <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9ec4" stop-opacity=".55"/><stop offset="1" stop-color="#ff9ec4" stop-opacity="0"/></linearGradient></defs>
+              <path d="M0 40 L20 36 L40 38 L60 28 L80 31 L100 22 L120 26 L140 18 L160 24 L180 14 L200 19 L220 11 L240 16 L260 9 L280 13 L300 7 L320 10 L320 52 L0 52 Z" fill="url(#g1)"/>
+              <path d="M0 40 L20 36 L40 38 L60 28 L80 31 L100 22 L120 26 L140 18 L160 24 L180 14 L200 19 L220 11 L240 16 L260 9 L280 13 L300 7 L320 10" fill="none" stroke="#ffb7d4" stroke-width="1.6"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="sec">配置</div>
+
+        <div class="glass card-dark item">
+          <div class="dot">日</div>
+          <div class="body"><div class="n">日本 · 东京 01</div><div class="m">VLESS · Reality · XDRIVE</div></div>
+          <div class="ping">38 ms</div><div class="chev">›</div>
+        </div>
+
+        <div class="glass card-dark item">
+          <div class="dot">港</div>
+          <div class="body"><div class="n">中国香港 · HKG-02</div><div class="m">Trojan · TLS · Multiplex</div></div>
+          <div class="ping">62 ms</div><div class="chev">›</div>
+        </div>
+
+        <div class="glass card-dark item">
+          <div class="dot">美</div>
+          <div class="body"><div class="n">美国 · 洛杉矶 03</div><div class="m">Shadowsocks · 2022</div></div>
+          <div class="ping warn">184 ms</div><div class="chev">›</div>
+        </div>
+
+        <div class="glass card-dark item">
+          <div class="dot">新</div>
+          <div class="body"><div class="n">新加坡 · SIN-01</div><div class="m">WireGuard · AmneziaWG</div></div>
+          <div class="ping">71 ms</div><div class="chev">›</div>
+        </div>
+      </div>
+
+      <div class="fab glass chrome">
+        <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/></svg>
+      </div>
+
+      <div class="bottombar glass chrome">
+        <div class="l">
+          <span>↑ 24.6 KB/s</span>
+          <span>↓ 1.28 MB/s</span>
+          <span class="h">TOTAL 1.84 GB</span>
+        </div>
+        <div class="r">
+          <span>日本 · 东京</span>
+          <span>38 ms</span>
+          <span class="h">SING-BOX</span>
+        </div>
+      </div>
+    </div>
+    <div class="cap"><b>主界面（深色）</b><br>顶栏与底栏都是同一张玻璃：染色偏深、白色文字保持原样，FAB 去掉底座凹槽后悬浮其上。</div>
+  </div>
+
+  <!-- ============ 2. settings light ============ -->
+  <div class="col">
+    <div class="phone">
+      <div class="wall light"></div>
+      <div class="grain"></div>
+
+      <div class="statusbar dark-ink">
+        <span>9:41</span>
+        <span class="status-right">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="currentColor" opacity=".9"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="4.5" y="5.5" width="3" height="6.5" rx="1"/><rect x="9" y="3" width="3" height="9" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1"/></svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".9"><path d="M1 4.2a10 10 0 0 1 14 0M3.4 6.8a6.6 6.6 0 0 1 9.2 0"/><circle cx="8" cy="9.9" r="1.1" fill="currentColor" stroke="none"/></svg>
+          <span class="bar"></span>
+        </span>
+      </div>
+
+      <div class="appbar glass chrome" style="border-radius:0;">
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></div>
+        <div class="title">设置</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></div>
+      </div>
+
+      <div class="content light-ink">
+        <div class="sec light">网络</div>
+        <div class="glass card-light item">
+          <div class="dot light">DNS</div>
+          <div class="body"><div class="n">DNS 设置</div><div class="m light">远程 · 1.1.1.1 · DoH</div></div>
+          <div class="chev" style="color:rgba(60,35,50,.3)">›</div>
+        </div>
+        <div class="glass card-light item">
+          <div class="dot light">路</div>
+          <div class="body"><div class="n">路由配置</div><div class="m light">3 个规则集 · 12 条规则</div></div>
+          <div class="chev" style="color:rgba(60,35,50,.3)">›</div>
+        </div>
+
+        <div class="sec light">外观</div>
+        <div class="glass card-light item">
+          <div class="dot light">主</div>
+          <div class="body"><div class="n">主题色</div><div class="m light">粉色（Pink SSR）</div></div>
+          <div class="chev" style="color:rgba(60,35,50,.3)">›</div>
+        </div>
+        <div class="glass card-light item">
+          <div class="dot light">夜</div>
+          <div class="body"><div class="n">深色模式</div><div class="m light">跟随系统 · AMOLED 关闭</div></div>
+          <div class="chev" style="color:rgba(60,35,50,.3)">›</div>
+        </div>
+
+        <div class="sec light">数据</div>
+        <div class="glass card-light item">
+          <div class="dot light">备</div>
+          <div class="body"><div class="n">WebDAV 备份</div><div class="m light">上次备份 2 小时前</div></div>
+          <div class="chev" style="color:rgba(60,35,50,.3)">›</div>
+        </div>
+
+        <div style="margin:18px 4px 0; font-size:12px; line-height:1.7; color:rgba(60,35,50,.45);">
+          浅色主题下同一套令牌反转：卡片改为白色半透明，描边转为深粉 40%，文字沿用主题色。
+        </div>
+      </div>
+    </div>
+    <div class="cap"><b>设置（浅色）</b><br>卡片玻璃化由 <code>GlassRecycler.glassItems()</code> 一行接入，不改适配器、不动分隔线。</div>
+  </div>
+
+  <!-- ============ 3. drawer + dialog ============ -->
+  <div class="col">
+    <div class="phone">
+      <div class="wall dark"></div>
+      <div class="grain"></div>
+
+      <div class="statusbar">
+        <span>9:41</span>
+        <span class="status-right">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="currentColor" opacity=".95"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="4.5" y="5.5" width="3" height="6.5" rx="1"/><rect x="9" y="3" width="3" height="9" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1"/></svg>
+          <span class="bar"></span>
+        </span>
+      </div>
+
+      <div class="appbar glass chrome" style="border-radius:0;">
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+        <div class="title">Throne</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3H9.8l-.4 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2l.4 2.6h4.4l.4-2.6a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.06-.4.1-.8.1-1.2Z"/></svg></div>
+      </div>
+
+      <div class="content">
+        <div class="sec">配置</div>
+        <div class="glass card-dark item">
+          <div class="dot">日</div>
+          <div class="body"><div class="n">日本 · 东京 01</div><div class="m">VLESS · Reality</div></div>
+          <div class="ping">38 ms</div><div class="chev">›</div>
+        </div>
+        <div class="glass card-dark item" style="opacity:.6">
+          <div class="dot">港</div>
+          <div class="body"><div class="n">中国香港 · HKG-02</div><div class="m">Trojan · TLS</div></div>
+          <div class="ping">62 ms</div><div class="chev">›</div>
+        </div>
+      </div>
+
+      <div class="bottombar glass chrome">
+        <div class="l"><span>↑ 24.6 KB/s</span><span>↓ 1.28 MB/s</span></div>
+        <div class="r"><span>日本 · 东京</span><span class="h">SING-BOX</span></div>
+      </div>
+
+      <div class="scrim"></div>
+
+      <div class="drawer glass chrome">
+        <div class="head">
+          <div class="logo">T</div>
+          <div><div class="nm">Throne</div><div class="ver">v2.0.4 · arm64-v8a</div></div>
+        </div>
+        <div class="nav active"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>配置</div>
+        <div class="nav"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12h8"/></svg>路由</div>
+        <div class="nav"><svg viewBox="0 0 24 24"><path d="M4 18V9M10 18V5M16 18v-6M22 18H2"/></svg>统计</div>
+        <div class="nav"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3H9.8l-.4 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2l.4 2.6h4.4l.4-2.6a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.06-.4.1-.8.1-1.2Z"/></svg>设置</div>
+        <div class="nav"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5l3 1.8"/></svg>日志</div>
+        <div class="nav"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>备份与恢复</div>
+      </div>
+
+    </div>
+    <div class="cap"><b>抽屉（深色）</b><br>整块玻璃面板，滑动时刷新底片；选中项以白色 14% 的浅色玻璃浮起。</div>
+  </div>
+
+  <!-- ============ 4. dialog ============ -->
+  <div class="col">
+    <div class="phone">
+      <div class="wall dark"></div>
+      <div class="grain"></div>
+
+      <div class="statusbar">
+        <span>9:41</span>
+        <span class="status-right">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="currentColor" opacity=".95"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="4.5" y="5.5" width="3" height="6.5" rx="1"/><rect x="9" y="3" width="3" height="9" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1"/></svg>
+          <span class="bar"></span>
+        </span>
+      </div>
+
+      <div class="appbar glass chrome" style="border-radius:0;">
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+        <div class="title">Throne</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3H9.8l-.4 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2l.4 2.6h4.4l.4-2.6a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.06-.4.1-.8.1-1.2Z"/></svg></div>
+      </div>
+
+      <div class="content">
+        <div class="sec">配置</div>
+        <div class="glass card-dark item">
+          <div class="dot">日</div>
+          <div class="body"><div class="n">日本 · 东京 01</div><div class="m">VLESS · Reality · XDRIVE</div></div>
+          <div class="ping">38 ms</div><div class="chev">›</div>
+        </div>
+        <div class="glass card-dark item">
+          <div class="dot">港</div>
+          <div class="body"><div class="n">中国香港 · HKG-02</div><div class="m">Trojan · TLS · Multiplex</div></div>
+          <div class="ping">62 ms</div><div class="chev">›</div>
+        </div>
+        <div class="glass card-dark item">
+          <div class="dot">美</div>
+          <div class="body"><div class="n">美国 · 洛杉矶 03</div><div class="m">Shadowsocks · 2022</div></div>
+          <div class="ping warn">184 ms</div><div class="chev">›</div>
+        </div>
+      </div>
+
+      <div class="bottombar glass chrome">
+        <div class="l"><span>↑ 24.6 KB/s</span><span>↓ 1.28 MB/s</span></div>
+        <div class="r"><span>日本 · 东京</span><span class="h">SING-BOX</span></div>
+      </div>
+
+      <div class="fab glass chrome">
+        <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/></svg>
+      </div>
+
+      <div class="scrim" style="background:rgba(8,4,10,.34)"></div>
+
+      <div class="dialog glass chrome">
+        <h4>删除配置？</h4>
+        <p>「日本 · 东京 01」及其订阅将被移除，正在使用的连接会断开。</p>
+        <div class="acts"><div class="btn">取消</div><div class="btn primary">删除</div></div>
+      </div>
+    </div>
+    <div class="cap"><b>弹窗（深色）</b><br>由 <code>setBackgroundBlurRadius()</code> 让系统直接模糊窗口背后的内容，API 31 以上零成本，以下退化为高不透明度面板。</div>
+  </div>
+
+</div>
+
+<div class="footer">
+  预览仅表达观感与参数，不代表最终 APK 的像素级还原；文字与图标为示意内容。<br>
+  设计语言参照 iOS 26 Liquid Glass，玻璃材质参数对齐 <code>liquid_glass_widgets</code> 的 Standard 档。
+</div>
+
+</body>
+</html>

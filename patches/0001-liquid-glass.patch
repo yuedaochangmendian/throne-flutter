@@ -1,0 +1,1193 @@
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassAppBarLayout.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassAppBarLayout.kt
+new file mode 100644
+index 0000000..fe9ea33
+--- /dev/null
++++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassAppBarLayout.kt
+@@ -0,0 +1,35 @@
++package io.nekohasekai.sagernet.glass
++
++import android.content.Context
++import android.graphics.Color
++import android.util.AttributeSet
++import com.google.android.material.appbar.AppBarLayout
++
++/**
++ * Drop-in replacement for `AppBarLayout` in `layout_appbar.xml`.
++ *
++ * The toolbar keeps its Material behaviour (scroll flags, insets, menu); only the opaque
++ * `colorPrimary` fill is replaced by glass. The bottom corners are rounded so the bar reads as a
++ * floating sheet when a list scrolls under it.
++ */
++class GlassAppBarLayout @JvmOverloads constructor(
++    context: Context,
++    attrs: AttributeSet? = null,
++    defStyleAttr: Int = 0,
++) : AppBarLayout(context, attrs, defStyleAttr) {
++
++    val tokens: GlassTokens = GlassTokens.resolve(context)
++
++    init {
++        setBackgroundColor(Color.TRANSPARENT)
++        background = GlassDrawable(
++            context, tokens,
++            cornerRadiusDp = 0f,
++            corners = GlassDrawable.Corners.None,
++            tintTop = tokens.chromeTop,
++            tintBottom = tokens.chromeBottom,
++            borderTop = Color.TRANSPARENT,
++            borderBottom = tokens.chromeBorderBottom,
++        ).bindTo(this)
++    }
++}
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassBackdrop.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassBackdrop.kt
+new file mode 100644
+index 0000000..7aec027
+--- /dev/null
++++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassBackdrop.kt
+@@ -0,0 +1,137 @@
++package io.nekohasekai.sagernet.glass
++
++import android.graphics.Bitmap
++import android.graphics.Canvas
++import android.graphics.Color
++import android.os.SystemClock
++import android.util.Log
++import android.view.View
++import android.view.ViewTreeObserver
++import java.lang.ref.WeakReference
++import java.util.WeakHashMap
++
++/**
++ * Captures the window once, downscales it and blurs it: the single backdrop every glass surface
++ * samples from.
++ *
++ * One shared backdrop instead of one per surface keeps the cost flat (the app bar, the stats bar,
++ * the FAB and every glass card read the same bitmap) and makes the blur continuous across
++ * adjacent surfaces, which is what sells the "one sheet of glass" illusion.
++ *
++ * Capture runs in `OnPreDraw`, never inside a surface's own `draw()`: drawing the hierarchy from
++ * within its own draw pass is re-entrant and shows up as flicker or an ANR on slow devices.
++ * Surfaces registered with [registerSurface] are hidden (alpha 0) for the duration of the capture
++ * so a bar does not blur itself.
++ */
++object GlassBackdrop {
++
++    private const val TAG = "GlassBackdrop"
++
++    /** Minimum delay between two captures. Lower is smoother, higher saves battery. */
++    var captureIntervalMs = 90L
++
++    private var rootRef: WeakReference<View>? = null
++    private var bitmap: Bitmap? = null
++    private var scale = 1f
++    private var dirty = true
++    private var capturing = false
++    private var lastCaptureAt = 0L
++    private var pixelBuffer = IntArray(0)
++    private var radiusDp = 26f
++    private var downscale = 0.22f
++
++    private val surfaces = WeakHashMap<View, Boolean>()
++
++    class Frame(val bitmap: Bitmap, val scale: Float)
++
++    fun attach(root: View, tokens: GlassTokens) {
++        radiusDp = tokens.blurRadiusDp
++        downscale = tokens.downscale
++        if (rootRef?.get() === root) return
++        rootRef = WeakReference(root)
++        dirty = true
++        bitmap = null
++        root.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
++            override fun onPreDraw(): Boolean {
++                maybeCapture()
++                return true
++            }
++        })
++        root.viewTreeObserver.addOnScrollChangedListener { dirty = true }
++    }
++
++    /** Surfaces hide themselves while the backdrop is captured. Weakly held: nothing to unregister. */
++    fun registerSurface(view: View) {
++        surfaces[view] = true
++        dirty = true
++    }
++
++    fun invalidate() {
++        dirty = true
++    }
++
++    fun frame(): Frame? {
++        val bmp = bitmap ?: return null
++        return Frame(bmp, scale)
++    }
++
++    private fun maybeCapture() {
++        if (capturing) return
++        val root = rootRef?.get() ?: return
++        if (!root.isAttachedToWindow || root.width <= 0 || root.height <= 0) return
++        val now = SystemClock.uptimeMillis()
++        if (!dirty) return
++        if (now - lastCaptureAt < captureIntervalMs) return
++        lastCaptureAt = now
++        dirty = false
++        capture(root)
++    }
++
++    private fun capture(root: View) {
++        val w = (root.width * downscale).toInt().coerceAtLeast(8)
++        val h = (root.height * downscale).toInt().coerceAtLeast(8)
++        val bmp = try {
++            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
++        } catch (e: OutOfMemoryError) {
++            Log.w(TAG, "backdrop allocation failed", e)
++            return
++        }
++        val s = w.toFloat() / root.width
++        val canvas = Canvas(bmp)
++        canvas.drawColor(Color.BLACK)
++        canvas.scale(s, s)
++
++        val hidden = ArrayList<View>(surfaces.size)
++        for (view in surfaces.keys) {
++            if (view.isAttachedToWindow && view.alpha != 0f) hidden.add(view)
++        }
++        val alphas = FloatArray(hidden.size)
++        for (i in hidden.indices) {
++            alphas[i] = hidden[i].alpha
++            hidden[i].alpha = 0f
++        }
++
++        capturing = true
++        try {
++            root.draw(canvas)
++        } catch (e: RuntimeException) {
++            // A view in the tree can refuse a software canvas (a SurfaceView, a detached WebView).
++            // The wallpaper-only fallback in GlassDrawable still looks right; never crash for it.
++            Log.w(TAG, "backdrop capture failed", e)
++        } finally {
++            capturing = false
++            for (i in hidden.indices) hidden[i].alpha = alphas[i]
++        }
++
++        val count = w * h
++        val pixels = if (pixelBuffer.size == count) pixelBuffer else IntArray(count).also { pixelBuffer = it }
++        bmp.getPixels(pixels, 0, w, 0, 0, w, h)
++        val radius = (radiusDp * root.resources.displayMetrics.density * s).toInt()
++            .coerceIn(1, (w / 4).coerceAtLeast(1))
++        GlassBlur.blur(pixels, w, h, radius, passes = 3)
++        bmp.setPixels(pixels, 0, w, 0, 0, w, h)
++
++        bitmap = bmp
++        scale = s
++    }
++}
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassBlur.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassBlur.kt
+new file mode 100644
+index 0000000..b3bcac6
+--- /dev/null
++++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassBlur.kt
+@@ -0,0 +1,94 @@
++package io.nekohasekai.sagernet.glass
++
++/**
++ * Separable box blur, run three times: a cheap, allocation-light approximation of a Gaussian.
++ *
++ * The backdrop is blurred while downscaled (see [GlassBackdrop.downscale]), so the working set is
++ * roughly 250x550 pixels on a 1080p phone: about 1.5 ms for three passes. RenderScript is
++ * deprecated and RenderEffect only exists from API 31, so a plain integer box blur keeps one code
++ * path for API 24 through 35 and gives the same look on every device.
++ */
++internal object GlassBlur {
++
++    /**
++     * Blurs [pixels] in place.
++     *
++     * @param radius radius in pixels of the (already downscaled) bitmap.
++     * @param passes 3 for a Gaussian-like falloff, 2 when the frame budget is tight.
++     */
++    fun blur(pixels: IntArray, width: Int, height: Int, radius: Int, passes: Int = 3) {
++        if (radius < 1 || width < 2 || height < 2 || pixels.size < width * height) return
++        val tmp = IntArray(width * height)
++        repeat(passes) {
++            horizontal(pixels, tmp, width, height, radius)
++            vertical(tmp, pixels, width, height, radius)
++        }
++    }
++
++    private fun horizontal(src: IntArray, dst: IntArray, w: Int, h: Int, r: Int) {
++        val sumA = IntArray(w + 1)
++        val sumR = IntArray(w + 1)
++        val sumG = IntArray(w + 1)
++        val sumB = IntArray(w + 1)
++        for (y in 0 until h) {
++            val row = y * w
++            var a = 0
++            var rd = 0
++            var gn = 0
++            var bl = 0
++            for (x in 0 until w) {
++                val c = src[row + x]
++                a += (c ushr 24) and 0xFF
++                rd += (c ushr 16) and 0xFF
++                gn += (c ushr 8) and 0xFF
++                bl += c and 0xFF
++                sumA[x + 1] = a
++                sumR[x + 1] = rd
++                sumG[x + 1] = gn
++                sumB[x + 1] = bl
++            }
++            for (x in 0 until w) {
++                val x0 = if (x > r) x - r else 0
++                val x1 = if (x + r < w) x + r else w - 1
++                val count = x1 - x0 + 1
++                dst[row + x] = (((sumA[x1 + 1] - sumA[x0]) / count) shl 24) or
++                        (((sumR[x1 + 1] - sumR[x0]) / count) shl 16) or
++                        (((sumG[x1 + 1] - sumG[x0]) / count) shl 8) or
++                        ((sumB[x1 + 1] - sumB[x0]) / count)
++            }
++        }
++    }
++
++    private fun vertical(src: IntArray, dst: IntArray, w: Int, h: Int, r: Int) {
++        val sumA = IntArray(h + 1)
++        val sumR = IntArray(h + 1)
++        val sumG = IntArray(h + 1)
++        val sumB = IntArray(h + 1)
++        for (x in 0 until w) {
++            var a = 0
++            var rd = 0
++            var gn = 0
++            var bl = 0
++            for (y in 0 until h) {
++                val c = src[y * w + x]
++                a += (c ushr 24) and 0xFF
++                rd += (c ushr 16) and 0xFF
++                gn += (c ushr 8) and 0xFF
++                bl += c and 0xFF
++                sumA[y + 1] = a
++                sumR[y + 1] = rd
++                sumG[y + 1] = gn
++                sumB[y + 1] = bl
++            }
++            for (y in 0 until h) {
++                val y0 = if (y > r) y - r else 0
++                val y1 = if (y + r < h) y + r else h - 1
++                val count = y1 - y0 + 1
++                dst[y * w + x] = (((sumA[y1 + 1] - sumA[y0]) / count) shl 24) or
++                        (((sumR[y1 + 1] - sumR[y0]) / count) shl 16) or
++                        (((sumG[y1 + 1] - sumG[y0]) / count) shl 8) or
++                        ((sumB[y1 + 1] - sumB[y0]) / count)
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassDecor.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassDecor.kt
+new file mode 100644
+index 0000000..4fbc87e
+--- /dev/null
++++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassDecor.kt
+@@ -0,0 +1,114 @@
++package io.nekohasekai.sagernet.glass
++
++import android.app.Activity
++import android.content.Context
++import android.content.res.ColorStateList
++import android.graphics.Color
++import android.graphics.drawable.GradientDrawable
++import android.graphics.drawable.RippleDrawable
++import android.view.View
++import androidx.core.graphics.ColorUtils
++import androidx.drawerlayout.widget.DrawerLayout
++import io.nekohasekai.sagernet.R
++
++/**
++ * Wiring for the app's chrome. Everything here is additive: no view class changes, no layout
++ * rewrites, so a bad build can be reverted file by file.
++ */
++object GlassDecor {
++
++    /** Applies glass to the main window's floating chrome: stats bar, FAB and drawer panels. */
++    fun installMain(activity: Activity) {
++        if (!GlassHost.enabled) return
++        val tokens = GlassTokens.resolve(activity)
++
++        // Stats bar: smoked glass with rounded top corners. Replacing the BottomAppBar background
++        // also drops its FAB cradle, which is exactly what the floating-button look wants.
++        activity.findViewById<View>(R.id.stats)?.let { bar ->
++            bar.backgroundTintList = null
++            bar.background = GlassDrawable(
++                activity, tokens,
++                cornerRadiusDp = tokens.cardCornerDp,
++                corners = GlassDrawable.Corners.Top,
++                tintTop = tokens.chromeTop,
++                tintBottom = ColorUtils.setAlphaComponent(
++                    ColorUtils.blendARGB(tokens.chromeBottom, Color.BLACK, 0.15f), 0xC4
++                ),
++            ).bindTo(bar)
++        }
++
++        // FAB: a thicker slab of the same glass, so it still reads as the primary action.
++        activity.findViewById<View>(R.id.fab)?.let { fab ->
++            fab.backgroundTintList = null
++            fab.background = GlassDrawable(
++                activity, tokens,
++                cornerRadiusDp = 28f,
++                corners = GlassDrawable.Corners.All,
++                tintTop = ColorUtils.setAlphaComponent(tokens.chromeTop, 0xD9),
++                tintBottom = ColorUtils.setAlphaComponent(tokens.chromeBottom, 0xE6),
++            ).bindTo(fab)
++        }
++
++        // Drawer: one panel of glass over the frozen content behind it. The backdrop is refreshed
++        // while the drawer slides so it does not look like a screenshot.
++        val drawer = activity.findViewById<DrawerLayout>(R.id.drawer_layout)
++        val panels = listOfNotNull(
++            activity.findViewById<View>(R.id.nav_view),
++            activity.findViewById<View>(R.id.nav_view_black),
++        )
++        panels.forEach { panel ->
++            panel.background = GlassDrawable(
++                activity, tokens,
++                cornerRadiusDp = 0f,
++                corners = GlassDrawable.Corners.None,
++                tintTop = tokens.cardTop,
++                tintBottom = ColorUtils.setAlphaComponent(tokens.cardBottom, 0xFF),
++                borderTop = ColorUtils.setAlphaComponent(Color.WHITE, 0x1F),
++                borderBottom = ColorUtils.setAlphaComponent(Color.WHITE, 0x1F),
++            ).bindTo(panel)
++        }
++        drawer?.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
++            override fun onDrawerSlide(drawerView: View, slideOffset: Float) {
++                GlassBackdrop.invalidate()
++            }
++        })
++    }
++
++    /**
++     * Turns any container into a glass card. Call it on the root of a list item, a card, a
++     * preference header: anything that should read as a slab of glass rather than flat colour.
++     */
++    @JvmOverloads
++    fun card(
++        view: View,
++        radiusDp: Float = GlassTokens.resolve(view.context).cardCornerDp,
++        clickable: Boolean = false,
++        corners: GlassDrawable.Corners = GlassDrawable.Corners.All,
++    ): GlassDrawable {
++        val tokens = GlassTokens.resolve(view.context)
++        val glass = GlassDrawable(view.context, tokens, radiusDp, corners).bindTo(view)
++        if (clickable) {
++            val mask = GradientDrawable().apply {
++                shape = GradientDrawable.RECTANGLE
++                cornerRadius = radiusDp * view.resources.displayMetrics.density
++            }
++            view.background = RippleDrawable(
++                ColorStateList.valueOf(ColorUtils.setAlphaComponent(Color.WHITE, 0x26)),
++                glass, mask
++            )
++            view.isClickable = true
++        } else {
++            view.background = glass
++        }
++        // A glass card needs to be padded by the caller, but it always clears its own outline.
++        view.clipToOutline = false
++        return glass
++    }
++
++    /** Removes padding that Material's card insets add, so the glass edge is the visible edge. */
++    fun flush(view: View) {
++        view.setPadding(0, 0, 0, 0)
++    }
++
++    fun tokens(context: Context): GlassTokens = GlassTokens.resolve(context)
++}
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassDrawable.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassDrawable.kt
+new file mode 100644
+index 0000000..8506edc
+--- /dev/null
++++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassDrawable.kt
+@@ -0,0 +1,196 @@
++package io.nekohasekai.sagernet.glass
++
++import android.content.Context
++import android.graphics.Bitmap
++import android.graphics.BitmapShader
++import android.graphics.Canvas
++import android.graphics.ColorFilter
++import android.graphics.LinearGradient
++import android.graphics.Matrix
++import android.graphics.Outline
++import android.graphics.Paint
++import android.graphics.Path
++import android.graphics.PixelFormat
++import android.graphics.Rect
++import android.graphics.RectF
++import android.graphics.Shader
++import android.graphics.drawable.Drawable
++import android.view.View
++import java.lang.ref.WeakReference
++import kotlin.math.max
++import kotlin.math.min
++
++/**
++ * The glass surface itself: a Drawable, so it can be dropped on any View's background without
++ * changing its class, which is what makes "glass everywhere" cheap to wire into a 60-layout app.
++ *
++ * Three layers, in the order iOS 26 composites them:
++ *  1. the backdrop, sampled from [GlassBackdrop] and slightly magnified (the lens),
++ *  2. a vertical tint: lighter at the top, denser at the bottom (glass thickness),
++ *  3. a specular hairline: bright on the top-left, fading to nothing (the lit edge).
++ *
++ * API 24 has no RenderEffect, so the blur is baked into the backdrop bitmap instead of being
++ * applied per view; the result is identical and costs nothing extra per surface.
++ */
++class GlassDrawable @JvmOverloads constructor(
++    context: Context,
++    private val tokens: GlassTokens,
++    cornerRadiusDp: Float,
++    private val corners: Corners = Corners.All,
++    private val tintTop: Int = tokens.chromeTop,
++    private val tintBottom: Int = tokens.chromeBottom,
++    private val borderTop: Int = tokens.chromeBorderTop,
++    private val borderBottom: Int = tokens.chromeBorderBottom,
++) : Drawable() {
++
++    enum class Corners { All, Top, Bottom, None }
++
++    private val density = context.resources.displayMetrics.density
++    private val radiusPx = cornerRadiusDp * density
++
++    private val path = Path()
++    private val rect = RectF()
++    private val edge = RectF()
++
++    private val shaderPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
++    private val tintPaint = Paint(Paint.ANTI_ALIAS_FLAG)
++    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
++
++    private val matrix = Matrix()
++    private val location = IntArray(2)
++
++    private var shader: BitmapShader? = null
++    private var shaderSource: Bitmap? = null
++    private var viewRef: WeakReference<View>? = null
++
++    private var tintShader: Shader? = null
++    private var borderShader: Shader? = null
++    private var gradientKey = 0
++
++    private var alphaValue = 255
++    private var colorFilterValue: ColorFilter? = null
++
++    /** Attach to the view whose background this is: the backdrop is sampled at the view's position. */
++    fun bindTo(view: View): GlassDrawable {
++        viewRef = WeakReference(view)
++        GlassBackdrop.registerSurface(view)
++        return this
++    }
++
++    override fun draw(canvas: Canvas) {
++        val b = bounds
++        if (b.width() <= 0 || b.height() <= 0) return
++
++        val r = min(radiusPx, min(b.width(), b.height()) / 2f)
++        rect.set(b)
++        buildPath(r)
++
++        // 1. Backdrop.
++        val frame = GlassBackdrop.frame()
++        if (frame != null) {
++            val bitmap = frame.bitmap
++            if (shaderSource !== bitmap) {
++                shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
++                shaderSource = bitmap
++                shaderPaint.shader = shader
++            }
++            val view = viewRef?.get()
++            if (view != null && view.isAttachedToWindow) {
++                view.getLocationInWindow(location)
++                val s = frame.scale
++                // Slight magnification: the lens effect of a thick glass slab. Sampling beyond the
++                // view's own edges also hides the clamp smear at the borders.
++                val zoom = 1.04f
++                matrix.reset()
++                matrix.setScale(s, s)
++                matrix.postTranslate(b.left - location[0] * s, b.top - location[1] * s)
++                matrix.postScale(zoom, zoom, b.exactCenterX(), b.exactCenterY())
++                shader?.setLocalMatrix(matrix)
++                shaderPaint.alpha = alphaValue
++                shaderPaint.colorFilter = colorFilterValue
++                canvas.drawPath(path, shaderPaint)
++            }
++        }
++
++        // 2. Tint.
++        val key = (b.width() shl 16) xor b.height() xor (b.top * 31)
++        if (tintShader == null || gradientKey != key) {
++            tintShader = LinearGradient(
++                b.left, b.top, b.left, b.bottom, tintTop, tintBottom, Shader.TileMode.CLAMP
++            )
++            gradientKey = key
++        }
++        tintPaint.shader = tintShader
++        tintPaint.alpha = alphaValue
++        tintPaint.colorFilter = colorFilterValue
++        canvas.drawPath(path, tintPaint)
++
++        // 3. Specular hairline: the edge catches the light at the top-left and dies out.
++        val stroke = max(1f, density * 1.05f)
++        borderPaint.strokeWidth = stroke
++        edge.set(b)
++        edge.inset(stroke / 2f, stroke / 2f)
++        if (borderShader == null || gradientKey != key) {
++            borderShader = LinearGradient(
++                b.left, b.top, b.right, b.bottom,
++                intArrayOf(borderTop, borderTop and 0x00FFFFFF, borderBottom),
++                floatArrayOf(0f, 0.55f, 1f),
++                Shader.TileMode.CLAMP
++            )
++        }
++        borderPaint.shader = borderShader
++        borderPaint.alpha = alphaValue
++        borderPaint.colorFilter = colorFilterValue
++        drawEdge(canvas, edge, (r - stroke / 2f).coerceAtLeast(0f))
++    }
++
++    private fun drawEdge(canvas: Canvas, area: RectF, r: Float) {
++        when (corners) {
++            Corners.None -> canvas.drawRect(area, borderPaint)
++            Corners.All -> canvas.drawRoundRect(area, r, r, borderPaint)
++            Corners.Top -> canvas.drawRoundRect(
++                area, floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f), borderPaint
++            )
++            Corners.Bottom -> canvas.drawRoundRect(
++                area, floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r), borderPaint
++            )
++        }
++    }
++
++    private fun buildPath(r: Float) {
++        path.reset()
++        when (corners) {
++            Corners.None -> path.addRect(rect, Path.Direction.CW)
++            Corners.All -> path.addRoundRect(rect, r, r, Path.Direction.CW)
++            Corners.Top -> path.addRoundRect(
++                rect, floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f), Path.Direction.CW
++            )
++            Corners.Bottom -> path.addRoundRect(
++                rect, floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r), Path.Direction.CW
++            )
++        }
++    }
++
++    override fun onBoundsChange(bounds: Rect) {
++        gradientKey = 0
++        tintShader = null
++        borderShader = null
++    }
++
++    override fun getOutline(outline: Outline) {
++        val r = min(radiusPx, min(bounds.width(), bounds.height()) / 2f)
++        outline.setRoundRect(bounds, r)
++    }
++
++    override fun setAlpha(alpha: Int) {
++        alphaValue = alpha
++        invalidateSelf()
++    }
++
++    override fun setColorFilter(colorFilter: ColorFilter?) {
++        colorFilterValue = colorFilter
++        invalidateSelf()
++    }
++
++    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
++}
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassHostLayout.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassHostLayout.kt
+new file mode 100644
+index 0000000..e9db555
+--- /dev/null
++++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassHostLayout.kt
+@@ -0,0 +1,76 @@
++package io.nekohasekai.sagernet.glass
++
++import android.app.Activity
++import android.content.Context
++import android.graphics.Canvas
++import android.graphics.Color
++import android.graphics.drawable.ColorDrawable
++import android.util.AttributeSet
++import android.view.ViewGroup
++import android.widget.FrameLayout
++
++/**
++ * The window root the app draws on: wallpaper, readability scrim, then the activity's layout.
++ *
++ * Wrapping happens in `Activity.onContentChanged`, so it covers all 60 layouts of the app without
++ * touching a single one of them, and every `findViewById` keeps working because the original view
++ * is simply re-parented.
++ */
++class GlassHostLayout @JvmOverloads constructor(
++    context: Context,
++    attrs: AttributeSet? = null,
++    defStyleAttr: Int = 0,
++) : FrameLayout(context, attrs, defStyleAttr) {
++
++    val tokens: GlassTokens = GlassTokens.resolve(context)
++
++    init {
++        setWillNotDraw(false)
++    }
++
++    override fun onDraw(canvas: Canvas) {
++        GlassWallpaper.draw(canvas, width, height, tokens)
++        // A scrim between wallpaper and content: the glass still glows through, but body text keeps
++        // its contrast, which is the difference between "iOS 26" and "unreadable soup".
++        canvas.drawColor(tokens.scrim)
++    }
++}
++
++object GlassHost {
++
++    /** Set to false to keep the plain Material surfaces (a build flag, handy for A/B testing). */
++    var enabled = true
++
++    /**
++     * Wraps the activity's content in a [GlassHostLayout]. Safe to call on every content change:
++     * it is a no-op once wrapped.
++     */
++    fun wrap(activity: Activity): GlassHostLayout? {
++        if (!enabled) return null
++        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return null
++        if (content.childCount == 0) return null
++        val current = content.getChildAt(0)
++        if (current is GlassHostLayout) return current
++
++        content.removeViewAt(0)
++        val host = GlassHostLayout(activity)
++        host.addView(
++            current,
++            ViewGroup.LayoutParams(
++                ViewGroup.LayoutParams.MATCH_PARENT,
++                ViewGroup.LayoutParams.MATCH_PARENT
++            )
++        )
++        content.addView(
++            host,
++            ViewGroup.LayoutParams(
++                ViewGroup.LayoutParams.MATCH_PARENT,
++                ViewGroup.LayoutParams.MATCH_PARENT
++            )
++        )
++        // The window must not paint an opaque layer over the wallpaper.
++        activity.window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
++        GlassBackdrop.attach(activity.window.decorView, host.tokens)
++        return host
++    }
++}
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassRecycler.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassRecycler.kt
+new file mode 100644
+index 0000000..369baa5
+--- /dev/null
++++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassRecycler.kt
+@@ -0,0 +1,52 @@
++package io.nekohasekai.sagernet.glass
++
++import android.view.View
++import android.view.ViewGroup
++import androidx.recyclerview.widget.RecyclerView
++import io.nekohasekai.sagernet.R
++
++/**
++ * Turns list items into glass cards without touching adapters.
++ *
++ * Items are glassed when they scroll into view, and marked with [R.id.glass_card] so a rebind does
++ * not wrap them twice. Margins are left to the item layout: only the radius is applied here, which
++ * keeps dividers, decorations and item bounds exactly as they were.
++ */
++object GlassRecycler {
++
++    @JvmOverloads
++    fun glassItems(
++        recyclerView: RecyclerView,
++        radiusDp: Float = 16f,
++        gapDp: Float = 6f,
++    ) {
++        val density = recyclerView.resources.displayMetrics.density
++        recyclerView.addOnChildAttachStateChangeListener(
++            object : RecyclerView.OnChildAttachStateChangeListener {
++                override fun onChildViewAttachedToWindow(view: View) {
++                    if (view.getTag(R.id.glass_card) == true) return
++                    view.setTag(R.id.glass_card, true)
++                    val lp = view.layoutParams as? ViewGroup.MarginLayoutParams
++                    if (lp != null && gapDp > 0f) {
++                        // Only spacing that was already zero gets touched: layouts that space their
++                        // own items keep full control.
++                        if (lp.bottomMargin == 0) lp.bottomMargin = (gapDp * density).toInt()
++                        view.layoutParams = lp
++                    }
++                    GlassDecor.card(view, radiusDp)
++                }
++
++                override fun onChildViewDetachedFromWindow(view: View) = Unit
++            }
++        )
++        // Items already on screen when the list is glassed on first layout.
++        for (i in 0 until recyclerView.childCount) {
++            recyclerView.getChildAt(i)?.let { view ->
++                if (view.getTag(R.id.glass_card) != true) {
++                    view.setTag(R.id.glass_card, true)
++                    GlassDecor.card(view, radiusDp)
++                }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassTokens.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassTokens.kt
+new file mode 100644
+index 0000000..20fc176
+--- /dev/null
++++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassTokens.kt
+@@ -0,0 +1,159 @@
++package io.nekohasekai.sagernet.glass
++
++import android.content.Context
++import android.content.res.Configuration
++import android.graphics.Color
++import androidx.core.graphics.ColorUtils
++import com.google.android.material.color.MaterialColors
++import io.nekohasekai.sagernet.R
++
++/**
++ * Quality tiers, mirroring the tiers liquid_glass_widgets exposes on Flutter.
++ *
++ * The Flutter library can lean on Impeller shaders; a native Android build has to work on
++ * GPUs from API 24 upwards, so the tiers here are about how much of the pipeline is drawn.
++ */
++enum class GlassQuality {
++    /** Tint + hairline only. No backdrop blur: for very large surfaces or when the device is struggling. */
++    Minimal,
++
++    /** Backdrop blur + tint + hairline. The default. */
++    Standard,
++
++    /** Reserved for the AGSL lens shader (API 33+, opt in). Falls back to Standard when unavailable. */
++    Premium,
++}
++
++/**
++ * The design tokens of the glass system, derived from the active theme instead of hard coded.
++ *
++ * Throne ships 24 colour themes plus Monet, AMOLED and a White theme that turns readables black.
++ * Sampling `colorPrimary` / `colorBackground` keeps every one of them on-brand without touching
++ * the theme files: only the surface recipe lives here.
++ *
++ * Chrome (app bar, stats bar, FAB) is always *smoked* glass: a darkened, translucently tinted
++ * primary. That is what lets the existing white-on-primary text stay untouched and readable in
++ * all 24 themes, including White (whose primary is near white and darkens to a mid grey here).
++ */
++data class GlassTokens(
++    val dark: Boolean,
++    val amoled: Boolean,
++    val chromeLight: Boolean,
++    /** App bar / stats bar / FAB tint, top and bottom of the vertical gradient. */
++    val chromeTop: Int,
++    val chromeBottom: Int,
++    val chromeBorderTop: Int,
++    val chromeBorderBottom: Int,
++    /** Cards, drawer rows, dialogs: follow the theme's surface instead of the primary. */
++    val cardTop: Int,
++    val cardBottom: Int,
++    val cardBorderTop: Int,
++    val cardBorderBottom: Int,
++    /** Readability scrim painted over the wallpaper, below the content. */
++    val scrim: Int,
++    val wallpaperTop: Int,
++    val wallpaperBottom: Int,
++    val blobWarm: Int,
++    val blobPrimary: Int,
++    val blobCool: Int,
++    /** Text and icons drawn on chrome glass. */
++    val onGlass: Int,
++    val blurRadiusDp: Float,
++    val downscale: Float,
++    val chromeCornerDp: Float,
++    val cardCornerDp: Float,
++) {
++
++    companion object {
++
++        private val WHITE = 0xFFFFFFFF.toInt()
++        private val BLACK = 0xFF000000.toInt()
++
++        fun resolve(context: Context): GlassTokens {
++            val night = (context.resources.configuration.uiMode and
++                    Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
++            val primary = MaterialColors.getColor(
++                context, R.attr.colorPrimary, if (night) BLACK else WHITE
++            )
++            val background = MaterialColors.getColor(
++                context, android.R.attr.colorBackground, if (night) BLACK else WHITE
++            )
++            val amoled = night && ColorUtils.calculateLuminance(background) < 0.01f
++            // White theme: a light primary needs more darkening to keep white text readable.
++            val chromeLight = ColorUtils.calculateLuminance(primary) > 0.6f
++
++            val chromeBase = ColorUtils.blendARGB(
++                primary, BLACK, if (chromeLight) 0.52f else 0.62f
++            )
++            val chromeTop = ColorUtils.setAlphaComponent(
++                ColorUtils.blendARGB(chromeBase, WHITE, 0.14f), 0x99
++            )
++            val chromeBottom = ColorUtils.setAlphaComponent(
++                ColorUtils.blendARGB(chromeBase, BLACK, 0.34f), 0xB8
++            )
++
++            val cardTop: Int
++            val cardBottom: Int
++            if (night) {
++                cardTop = ColorUtils.setAlphaComponent(
++                    ColorUtils.blendARGB(primary, WHITE, 0.10f), 0x3D
++                )
++                cardBottom = ColorUtils.setAlphaComponent(
++                    ColorUtils.blendARGB(primary, BLACK, 0.55f), 0x59
++                )
++            } else {
++                cardTop = ColorUtils.setAlphaComponent(WHITE, 0x9E)
++                cardBottom = ColorUtils.setAlphaComponent(
++                    ColorUtils.blendARGB(primary, WHITE, 0.82f), 0x85
++                )
++            }
++
++            val cardBorderTop = ColorUtils.setAlphaComponent(WHITE, if (night) 0x3D else 0xB3)
++            val cardBorderBottom = ColorUtils.setAlphaComponent(
++                if (night) WHITE else ColorUtils.blendARGB(primary, BLACK, 0.35f),
++                if (night) 0x14 else 0x26
++            )
++
++            val wallTop = ColorUtils.blendARGB(
++                primary, if (night) 0xFF07070C.toInt() else WHITE, if (night) 0.74f else 0.84f
++            )
++            val wallBottom = if (night) {
++                if (amoled) BLACK else ColorUtils.blendARGB(primary, 0xFF0A0A12.toInt(), 0.91f)
++            } else {
++                ColorUtils.blendARGB(primary, WHITE, 0.95f)
++            }
++
++            return GlassTokens(
++                dark = night,
++                amoled = amoled,
++                chromeLight = chromeLight,
++                chromeTop = chromeTop,
++                chromeBottom = chromeBottom,
++                chromeBorderTop = ColorUtils.setAlphaComponent(WHITE, if (night) 0x59 else 0x66),
++                chromeBorderBottom = ColorUtils.setAlphaComponent(WHITE, if (night) 0x1A else 0x26),
++                cardTop = cardTop,
++                cardBottom = cardBottom,
++                cardBorderTop = cardBorderTop,
++                cardBorderBottom = cardBorderBottom,
++                scrim = ColorUtils.setAlphaComponent(
++                    if (night) BLACK else WHITE, if (night) 0x4D else 0x33
++                ),
++                wallpaperTop = wallTop,
++                wallpaperBottom = wallBottom,
++                blobWarm = ColorUtils.setAlphaComponent(
++                    ColorUtils.blendARGB(primary, WHITE, 0.28f), if (night) 0x5C else 0x4D
++                ),
++                blobPrimary = ColorUtils.setAlphaComponent(primary, if (night) 0x4D else 0x3D),
++                blobCool = ColorUtils.setAlphaComponent(
++                    ColorUtils.blendARGB(primary, 0xFF3B82F6.toInt(), 0.62f),
++                    if (night) 0x47 else 0x33
++                ),
++                onGlass = WHITE,
++                blurRadiusDp = 26f,
++                downscale = 0.22f,
++                chromeCornerDp = 0f,
++                cardCornerDp = 20f,
++            )
++        }
++    }
++}
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassWallpaper.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassWallpaper.kt
+new file mode 100644
+index 0000000..9455776
+--- /dev/null
++++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassWallpaper.kt
+@@ -0,0 +1,89 @@
++package io.nekohasekai.sagernet.glass
++
++import android.graphics.Bitmap
++import android.graphics.Canvas
++import android.graphics.Color
++import android.graphics.LinearGradient
++import android.graphics.Paint
++import android.graphics.RadialGradient
++import android.graphics.RectF
++import android.graphics.Shader
++
++/**
++ * The wallpaper the whole app floats on.
++ *
++ * Liquid Glass needs something to refract: on iOS that is your home screen, here it is a mesh
++ * gradient derived from the theme's primary colour. It is rendered once per size/theme into a
++ * half-resolution bitmap (blobs are low frequency, upscaling costs nothing) and stretched, so the
++ * per-frame cost is a single textured quad.
++ */
++object GlassWallpaper {
++
++    private var cached: Bitmap? = null
++    private var cacheKey = 0
++    private val blit = Paint(Paint.FILTER_BITMAP_FLAG)
++    private val dest = RectF()
++
++    fun draw(canvas: Canvas, width: Int, height: Int, tokens: GlassTokens) {
++        if (width <= 0 || height <= 0) return
++        val key = (width shl 12) xor height xor tokens.hashCode()
++        var bitmap = cached
++        if (bitmap == null || cacheKey != key || bitmap.isRecycled) {
++            val w = (width * 0.34f).toInt().coerceAtLeast(2)
++            val h = (height * 0.34f).toInt().coerceAtLeast(2)
++            bitmap = render(w, h, tokens)
++            cached = bitmap
++            cacheKey = key
++        }
++        dest.set(0f, 0f, width.toFloat(), height.toFloat())
++        canvas.drawBitmap(bitmap, null, dest, blit)
++    }
++
++    private fun render(w: Int, h: Int, tokens: GlassTokens): Bitmap {
++        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
++        val canvas = Canvas(bitmap)
++        val wf = w.toFloat()
++        val hf = h.toFloat()
++
++        val base = Paint(Paint.ANTI_ALIAS_FLAG)
++        base.shader = LinearGradient(
++            0f, 0f, wf * 0.25f, hf,
++            tokens.wallpaperTop, tokens.wallpaperBottom, Shader.TileMode.CLAMP
++        )
++        canvas.drawRect(0f, 0f, wf, hf, base)
++
++        // Three overlapping lights: a warm one behind the app bar, the theme colour on the trailing
++        // edge, and a cool one at the bottom. Together they give the blur something to bleed.
++        blob(canvas, wf, hf, tokens.blobWarm, 0.02f, 0.04f, 0.95f)
++        blob(canvas, wf, hf, tokens.blobPrimary, 0.96f, 0.28f, 0.80f)
++        blob(canvas, wf, hf, tokens.blobCool, 0.34f, 1.02f, 1.00f)
++
++        val shade = Paint(Paint.ANTI_ALIAS_FLAG)
++        shade.shader = LinearGradient(
++            0f, hf * 0.55f, 0f, hf,
++            Color.TRANSPARENT,
++            if (tokens.dark) 0x66000000 else 0x14000000,
++            Shader.TileMode.CLAMP
++        )
++        canvas.drawRect(0f, hf * 0.55f, wf, hf, shade)
++
++        return bitmap
++    }
++
++    private fun blob(
++        canvas: Canvas,
++        w: Float,
++        h: Float,
++        color: Int,
++        cx: Float,
++        cy: Float,
++        size: Float,
++    ) {
++        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
++        val radius = maxOf(w, h) * 0.5f * size
++        paint.shader = RadialGradient(
++            w * cx, h * cy, radius, color, Color.TRANSPARENT, Shader.TileMode.CLAMP
++        )
++        canvas.drawRect(0f, 0f, w, h, paint)
++    }
++}
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassWindows.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassWindows.kt
+new file mode 100644
+index 0000000..338d933
+--- /dev/null
++++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassWindows.kt
+@@ -0,0 +1,73 @@
++package io.nekohasekai.sagernet.glass
++
++import android.app.Dialog
++import android.graphics.Color
++import android.graphics.drawable.ColorDrawable
++import android.graphics.drawable.GradientDrawable
++import android.graphics.drawable.InsetDrawable
++import android.os.Build
++import android.view.Window
++import android.view.WindowManager
++import androidx.core.graphics.ColorUtils
++
++/**
++ * Window-level glass for dialogs.
++ *
++ * Unlike an in-app surface, a dialog lives in its own window, so there is nothing to snapshot:
++ * the platform can blur whatever is behind it (`setBackgroundBlurRadius`, API 31+). That is both
++ * cheaper and more correct than capturing the activity behind the dialog.
++ *
++ * Below API 31 the panel simply becomes more opaque; the rounded silhouette stays.
++ */
++object GlassWindows {
++
++    @JvmStatic
++    @JvmOverloads
++    fun apply(dialog: Dialog, cornerDp: Float = 28f, marginDp: Float = 16f) {
++        if (!GlassHost.enabled) return
++        val window = dialog.window ?: return
++        val context = dialog.context
++        val tokens = GlassTokens.resolve(context)
++        val density = context.resources.displayMetrics.density
++        val blurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
++
++        val top = if (blurAvailable) tokens.cardTop else opaque(tokens.cardTop, 0xF2)
++        val bottom = if (blurAvailable) tokens.cardBottom else opaque(tokens.cardBottom, 0xF5)
++
++        val panel = GradientDrawable().apply {
++            shape = GradientDrawable.RECTANGLE
++            cornerRadius = cornerDp * density
++            colors = intArrayOf(top, bottom)
++            setStroke(
++                (density * 1.05f).toInt().coerceAtLeast(1),
++                tokens.cardBorderTop
++            )
++        }
++        window.setBackgroundDrawable(InsetDrawable(panel, (marginDp * density).toInt()))
++        window.setDimAmount(if (blurAvailable) 0.28f else 0.42f)
++
++        if (blurAvailable) {
++            blurBehind(window)
++        }
++    }
++
++    /** Blurs everything behind a window. API 31+; a no-op elsewhere. */
++    @JvmStatic
++    @JvmOverloads
++    fun blurBehind(window: Window, radiusDp: Float = 30f) {
++        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
++        val density = window.context.resources.displayMetrics.density
++        @Suppress("DEPRECATION")
++        window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
++        window.setBackgroundBlurRadius((radiusDp * density).toInt())
++    }
++
++    /** Removes the opaque window layer so the wallpaper behind the activity can show through. */
++    @JvmStatic
++    fun makeWindowTransparent(window: Window) {
++        window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
++    }
++
++    private fun opaque(color: Int, minAlpha: Int): Int =
++        ColorUtils.setAlphaComponent(color, maxOf(Color.alpha(color), minAlpha))
++}
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/ui/MainActivity.kt b/app/src/main/java/io/nekohasekai/sagernet/ui/MainActivity.kt
+index a9c9b28..470c5ef 100644
+--- a/app/src/main/java/io/nekohasekai/sagernet/ui/MainActivity.kt
++++ b/app/src/main/java/io/nekohasekai/sagernet/ui/MainActivity.kt
+@@ -37,6 +37,7 @@ import io.nekohasekai.sagernet.bg.SagerConnection
+ import io.nekohasekai.sagernet.bg.test.TestSpec
+ import io.nekohasekai.sagernet.database.DataStore
+ import io.nekohasekai.sagernet.database.SettingsRegistry
++import io.nekohasekai.sagernet.glass.GlassDecor
+ import io.nekohasekai.sagernet.database.ProfileManager
+ import io.nekohasekai.sagernet.database.preference.OnPreferenceDataStoreChangeListener
+ import io.nekohasekai.sagernet.database.backup.BackupEntry
+@@ -148,6 +149,7 @@ class MainActivity : ThemedActivity(),
+         }
+ 
+         setContentView(binding.root)
++        GlassDecor.installMain(this)
+         currentMainFragment =
+             supportFragmentManager.findFragmentById(R.id.fragment_holder) as? ToolbarFragment
+                 ?: currentMainFragment
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/ui/ThemedActivity.kt b/app/src/main/java/io/nekohasekai/sagernet/ui/ThemedActivity.kt
+index e161054..8549a17 100644
+--- a/app/src/main/java/io/nekohasekai/sagernet/ui/ThemedActivity.kt
++++ b/app/src/main/java/io/nekohasekai/sagernet/ui/ThemedActivity.kt
+@@ -14,6 +14,7 @@ import com.google.android.material.appbar.AppBarLayout
+ import com.google.android.material.color.MaterialColors
+ import com.google.android.material.snackbar.Snackbar
+ import io.nekohasekai.sagernet.R
++import io.nekohasekai.sagernet.glass.GlassHost
+ import io.nekohasekai.sagernet.utils.Theme
+ import io.nekohasekai.sagernet.widget.applyTopInset
+ 
+@@ -66,6 +67,9 @@ abstract class ThemedActivity : AppCompatActivity {
+     override fun onContentChanged() {
+         super.onContentChanged()
+         findViewById<AppBarLayout>(R.id.appbar)?.applyTopInset()
++        // Liquid Glass host: wallpaper + scrim behind every layout of this activity. Skipped for
++        // dialog-themed activities, which are glassed at window level instead (GlassWindows).
++        if (!isDialog) GlassHost.wrap(this)
+     }
+ 
+     override fun setTheme(resId: Int) {
+diff --git a/app/src/main/java/io/nekohasekai/sagernet/widget/AlertDialogFragment.kt b/app/src/main/java/io/nekohasekai/sagernet/widget/AlertDialogFragment.kt
+index 20a3fb0..3cb587f 100644
+--- a/app/src/main/java/io/nekohasekai/sagernet/widget/AlertDialogFragment.kt
++++ b/app/src/main/java/io/nekohasekai/sagernet/widget/AlertDialogFragment.kt
+@@ -10,6 +10,7 @@ import androidx.fragment.app.Fragment
+ import androidx.fragment.app.setFragmentResult
+ import androidx.fragment.app.setFragmentResultListener
+ import com.google.android.material.dialog.MaterialAlertDialogBuilder
++import io.nekohasekai.sagernet.glass.GlassWindows
+ import kotlinx.parcelize.Parcelize
+ 
+ /** The argument or result of a dialog that carries neither. */
+@@ -49,7 +50,10 @@ abstract class AlertDialogFragment<Arg : Parcelable, Ret : Parcelable?> :
+     fun key(resultKey: String = javaClass.name) = args().putString(KEY_RESULT, resultKey)
+ 
+     override fun onCreateDialog(savedInstanceState: Bundle?): AlertDialog =
+-        MaterialAlertDialogBuilder(requireContext()).also { it.prepare(this) }.create()
++        MaterialAlertDialogBuilder(requireContext()).also { it.prepare(this) }.create().also {
++            // Window-level glass: the platform blurs the activity behind the dialog (API 31+).
++            GlassWindows.apply(it)
++        }
+ 
+     override fun onClick(dialog: DialogInterface?, which: Int) {
+         setFragmentResult(resultKey ?: return, Bundle().apply {
+diff --git a/app/src/main/res/layout/layout_appbar.xml b/app/src/main/res/layout/layout_appbar.xml
+index a8df256..8fc8dfd 100644
+--- a/app/src/main/res/layout/layout_appbar.xml
++++ b/app/src/main/res/layout/layout_appbar.xml
+@@ -1,20 +1,21 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<com.google.android.material.appbar.AppBarLayout xmlns:android="http://schemas.android.com/apk/res/android"
++<io.nekohasekai.sagernet.glass.GlassAppBarLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     xmlns:app="http://schemas.android.com/apk/res-auto"
+     android:id="@+id/appbar"
+     android:layout_width="match_parent"
+     android:layout_height="?attr/actionBarSize"
+-    android:background="?attr/colorPrimary"
+     app:elevation="0dp"
+     app:liftOnScroll="false">
+ 
++    <!-- No colorPrimary fill any more: the glass is the AppBarLayout's background, the toolbar is
++         the content floating on it. -->
+     <com.google.android.material.appbar.MaterialToolbar
+         android:id="@+id/toolbar"
+         android:layout_width="match_parent"
+         android:layout_height="match_parent"
+-        android:background="?attr/colorPrimary"
++        android:background="@android:color/transparent"
+         android:theme="?actionBarTheme"
+         android:touchscreenBlocksFocus="false"
+         app:popupTheme="@style/ThemeOverlay.AppCompat.DayNight"
+         app:title="@string/app_name" />
+-</com.google.android.material.appbar.AppBarLayout>
+\ No newline at end of file
++</io.nekohasekai.sagernet.glass.GlassAppBarLayout>
+diff --git a/app/src/main/res/values/ids.xml b/app/src/main/res/values/ids.xml
+index a42c72e..af1ae9e 100644
+--- a/app/src/main/res/values/ids.xml
++++ b/app/src/main/res/values/ids.xml
+@@ -4,4 +4,6 @@
+     <item name="inset_margin_base" type="id" />
+     <item name="action_previous_server" type="id" />
+     <item name="action_next_server" type="id" />
++    <!-- Marks a list item that already carries a glass background (see GlassRecycler). -->
++    <item name="glass_card" type="id" />
+ </resources>

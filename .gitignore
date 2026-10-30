@@ -1,0 +1,15 @@
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# 构建产物
+build/
+.gradle/
+*.apk
+*.aab
+*.iml
+.idea/
+local.properties
+
+# 截图临时文件
+preview/crop*.png
