@@ -39,7 +39,18 @@ mkdir -p licenses && printf '24333f8a63b6825ea9c5514f83c2829b004d1fee\n' > licen
 
 Build-Tools 的 zip 内部目录名是 API 代号（`android-15`），必须手动改成版本号 `35.0.1`，否则 AGP 找不到。
 
-### 2. 打 ThroneCore.aar
+### 2. 放 Liquid Glass 的 AAR
+
+```bash
+cp patches/app/libs/liquidglass-v2.0.11.aar /path/to/ThroneForAndroid/app/libs/
+```
+
+上游坐标是 `com.github.QWEA0:liquidglass:v2.0.11`（JitPack），但这台机器上 `implementation("com.github.QWEA0:liquidglass:v2.0.11")`
+解析不到 artifact——Gradle 拿到了 POM，转去镜像源找 `.aar` 时 404，报
+`Failed to transform liquidglass-v2.0.11.aar ... Could not find`。改成仓库内自带的 AAR 后一次通过，
+顺带也不再依赖第三方构建农场当时的可用性。
+
+### 3. 打 ThroneCore.aar
 
 ```bash
 curl -L -o throne.tgz "https://codeload.github.com/throneproj/Throne/tar.gz/$(sed -n 's/^THRONE_CORE_REF=//p' nb4a.properties)"
@@ -55,7 +66,7 @@ DEST=/path/to/ThroneForAndroid/app/libs bash script/build_android.sh
 产出 `app/libs/ThroneCore.aar`（约 92 MB，内含 `arm64-v8a` / `armeabi-v7a` / `x86_64` 三套 `libthrone.so`）。
 32 核机器约 4 分钟，主要耗时在 Go 依赖拉取和 `gomobile bind`。
 
-### 3. 生成 schema（App 运行时要读）
+### 4. 生成 schema（App 运行时要读）
 
 ```bash
 cd core
@@ -66,7 +77,7 @@ CGO_ENABLED=0 go run -trimpath -ldflags=-checklinkname=0 \
   -o ../../../ThroneForAndroid/app/src/main/assets/schema/sing-box.json
 ```
 
-### 4. 打 App
+### 5. 打 App
 
 ```bash
 cd ThroneForAndroid
@@ -79,22 +90,23 @@ printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
 
 ## 踩坑记录
 
-1. **`Unresolved reference 'throneproj'`（465 条）** —— 缺 `ThroneCore.aar`，不是代码错误。见步骤 2。
+1. **`Unresolved reference 'throneproj'`（465 条）** —— 缺 `ThroneCore.aar`，不是代码错误。见步骤 3。
 2. **Gradle 报 `initialization script ... Unexpected input: '{'`** —— `~/.gradle/init.gradle` 里
    `maven { url https://... }` 缺引号、`mavelCentral()` 拼错。改掉或删掉。
 3. **守护进程无故消失 / `Gradle build daemon disappeared unexpectedly`** —— 容器 cgroup 内存 8 GB，
    而 `gradle.properties` 给的是 `-Xmx4g` + Kotlin daemon 默认值 + `workers.max` 自动，KSP 阶段直接 OOM。
    压到 `-Xmx3g` / `kotlin.daemon.jvmargs=-Xmx2g` / `workers.max=3` / `parallel=false` 即过。
-4. **`Canvas.drawRoundRect` 没有四角独立圆角重载** —— 只有 `Path.addRoundRect(RectF, FloatArray, Direction)` 有。
-5. **`Drawable.bounds` 是 `Rect`（整型）** —— 传给 `LinearGradient` 需要先 `toFloat()`。
-6. **debug 包名带 `.debug` 后缀** —— `applicationIdSuffix` 所致，可与正式版共存安装，但**不能**覆盖升级。
+4. **增量构建产出 76 MB 的胖 APK** —— 同一次 `assembleOssDebug` 二次运行后，`resources.arsc`
+   之后多出 30 MB 的零填充，`unzip -v` 里压缩总量却只有 45 MB。`gradle clean` 后恢复正常。
+   拿到异常大的包先别怀疑资源，先 clean 一次。
+5. **debug 包名带 `.debug` 后缀** —— `applicationIdSuffix` 所致，可与正式版共存安装，但**不能**覆盖升级。
 
 ## 产物
 
 | ABI | 文件 | 大小 | 适用 |
 |---|---|---|---|
-| arm64-v8a | `Throne-2.0.4-arm64-v8a-debug.apk` | 46 MB | 绝大多数手机（首选） |
-| armeabi-v7a | `Throne-2.0.4-armeabi-v7a-debug.apk` | 46 MB | 32 位老机型 |
-| x86_64 | `Throne-2.0.4-x86_64-debug.apk` | 48 MB | 模拟器 / 部分平板 |
+| arm64-v8a | `Throne-2.0.4-arm64-v8a-debug.apk` | 45.7 MB | 绝大多数手机（首选） |
+| armeabi-v7a | `Throne-2.0.4-armeabi-v7a-debug.apk` | 45.8 MB | 32 位老机型 |
+| x86_64 | `Throne-2.0.4-x86_64-debug.apk` | 48.0 MB | 模拟器 / 部分平板 |
 
 debug 签名（Android Debug 证书），仅用于自测；对外分发请按 Throne 的 release 流程配置正式签名。

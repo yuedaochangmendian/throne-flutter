@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.util.AttributeSet
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 
@@ -41,6 +42,16 @@ object GlassHost {
     /** Set to false to keep the plain Material surfaces (a build flag, handy for A/B testing). */
     var enabled = true
 
+    /** 从任意 View 往上找窗口根部的宿主；玻璃用它当采样源。 */
+    fun hostOf(view: View): GlassHostLayout? {
+        var parent = view.parent
+        while (parent is View) {
+            if (parent is GlassHostLayout) return parent
+            parent = parent.parent
+        }
+        return null
+    }
+
     /**
      * Wraps the activity's content in a [GlassHostLayout]. Safe to call on every content change:
      * it is a no-op once wrapped.
@@ -70,7 +81,6 @@ object GlassHost {
         )
         // The window must not paint an opaque layer over the wallpaper.
         activity.window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        GlassBackdrop.attach(activity.window.decorView, host.tokens)
         return host
     }
 }

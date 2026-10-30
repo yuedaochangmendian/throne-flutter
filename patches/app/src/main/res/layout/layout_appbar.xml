@@ -1,21 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<io.nekohasekai.sagernet.glass.GlassAppBarLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.appbar.AppBarLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/appbar"
     android:layout_width="match_parent"
     android:layout_height="?attr/actionBarSize"
+    android:background="@android:color/transparent"
     app:elevation="0dp"
     app:liftOnScroll="false">
 
-    <!-- No colorPrimary fill any more: the glass is the AppBarLayout's background, the toolbar is
-         the content floating on it. -->
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
+    <!-- LiquidGlassView 是容器：工具栏放在它里面。玻璃采样时会把自己连同子级一起隐藏，
+         标题因此不会在背景底片里留下重影。采样源在代码里指向窗口根部的宿主。 -->
+    <com.example.liquidglass.LiquidGlassView
+        android:id="@+id/appbar_glass"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@android:color/transparent"
-        android:theme="?actionBarTheme"
-        android:touchscreenBlocksFocus="false"
-        app:popupTheme="@style/ThemeOverlay.AppCompat.DayNight"
-        app:title="@string/app_name" />
-</io.nekohasekai.sagernet.glass.GlassAppBarLayout>
+        app:glassMaterial="regular"
+        app:cornerRadius="0dp">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/transparent"
+            android:theme="?actionBarTheme"
+            android:touchscreenBlocksFocus="false"
+            app:popupTheme="@style/ThemeOverlay.AppCompat.DayNight"
+            app:title="@string/app_name" />
+    </com.example.liquidglass.LiquidGlassView>
+</com.google.android.material.appbar.AppBarLayout>
