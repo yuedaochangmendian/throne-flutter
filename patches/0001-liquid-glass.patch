@@ -404,10 +404,10 @@ index 0000000..4fbc87e
 +}
 diff --git a/app/src/main/java/io/nekohasekai/sagernet/glass/GlassDrawable.kt b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassDrawable.kt
 new file mode 100644
-index 0000000..8506edc
+index 0000000..4467916
 --- /dev/null
 +++ b/app/src/main/java/io/nekohasekai/sagernet/glass/GlassDrawable.kt
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,204 @@
 +package io.nekohasekai.sagernet.glass
 +
 +import android.content.Context
@@ -459,6 +459,7 @@ index 0000000..8506edc
 +    private val radiusPx = cornerRadiusDp * density
 +
 +    private val path = Path()
++    private val edgePath = Path()
 +    private val rect = RectF()
 +    private val edge = RectF()
 +
@@ -522,11 +523,15 @@ index 0000000..8506edc
 +            }
 +        }
 +
-+        // 2. Tint.
++        // 2. Tint. `bounds` is an integer Rect, so the gradient endpoints have to be widened to Float.
++        val left = b.left.toFloat()
++        val top = b.top.toFloat()
++        val right = b.right.toFloat()
++        val bottom = b.bottom.toFloat()
 +        val key = (b.width() shl 16) xor b.height() xor (b.top * 31)
 +        if (tintShader == null || gradientKey != key) {
 +            tintShader = LinearGradient(
-+                b.left, b.top, b.left, b.bottom, tintTop, tintBottom, Shader.TileMode.CLAMP
++                left, top, left, bottom, tintTop, tintBottom, Shader.TileMode.CLAMP
 +            )
 +            gradientKey = key
 +        }
@@ -542,7 +547,7 @@ index 0000000..8506edc
 +        edge.inset(stroke / 2f, stroke / 2f)
 +        if (borderShader == null || gradientKey != key) {
 +            borderShader = LinearGradient(
-+                b.left, b.top, b.right, b.bottom,
++                left, top, right, bottom,
 +                intArrayOf(borderTop, borderTop and 0x00FFFFFF, borderBottom),
 +                floatArrayOf(0f, 0.55f, 1f),
 +                Shader.TileMode.CLAMP
@@ -558,13 +563,16 @@ index 0000000..8506edc
 +        when (corners) {
 +            Corners.None -> canvas.drawRect(area, borderPaint)
 +            Corners.All -> canvas.drawRoundRect(area, r, r, borderPaint)
-+            Corners.Top -> canvas.drawRoundRect(
-+                area, floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f), borderPaint
-+            )
-+            Corners.Bottom -> canvas.drawRoundRect(
-+                area, floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r), borderPaint
-+            )
++            // Canvas has no per-corner-radii overload; that only exists on Path.
++            Corners.Top -> drawPathEdge(canvas, area, floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f))
++            Corners.Bottom -> drawPathEdge(canvas, area, floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r))
 +        }
++    }
++
++    private fun drawPathEdge(canvas: Canvas, area: RectF, radii: FloatArray) {
++        edgePath.reset()
++        edgePath.addRoundRect(area, radii, Path.Direction.CW)
++        canvas.drawPath(edgePath, borderPaint)
 +    }
 +
 +    private fun buildPath(r: Float) {

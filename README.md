@@ -128,20 +128,28 @@ git am /path/to/0001-liquid-glass.patch     # 或者按 INTEGRATION.md 手工拷
 
 ## 验证状态（务请知悉）
 
-- ✅ 已读源码并核对全部接入点（包名、控件类、主题属性、布局 id 均为真实存在的）
-- ✅ 10 个 Kotlin 文件用 Kotlin 2.0.21 编译器跑过解析：**391 个报错全部是"缺少 android/androidx 类"
-  一类的未解析引用与级联错误，没有任何语法错误**（已按错误类型分类核对）
-- ✅ 依赖版本对齐（material 1.8.0 / core-ktx 1.9.0 / drawerlayout 1.1.1），用到的 API 在仓库现有代码里均有同版本先例：
-  `MaterialColors.getColor(Context,int,int)`、`getLocationInWindow`、`Canvas.drawRoundRect(RectF,…)` 等
+- ✅ **已实际编译通过**：Android SDK 35 + Build-Tools 35.0.1 + NDK 28.2 + Gradle 8.10.2 + AGP 8.8.1，
+  `assembleOssDebug` → **BUILD SUCCESSFUL**，产出 3 个按 ABI 拆分的 APK（46–48 MB）
+- ✅ APK 已验签名（Android Debug 证书）、包名 `com.nb4a.throne.debug`、versionName `2.0.4`，
+  `dexdump` 确认 12 个 `io.nekohasekai.sagernet.glass.*` 类全部进包
+- ✅ 编译过程暴露并修正了 4 处真实类型错误（首版纯静态核对没抓到，见下）
 - ✅ 预览图由 Chromium 实际渲染，参数与 Kotlin 常量一致
-- ⚠️ **未做完整类型检查/编译**：本环境没有 Android SDK（`find / -name sdkmanager` 为空，
-  Google CDN 拉 `android.jar` 约 35 KB/s、64 MB 需半小时以上，已放弃）
-- ⚠️ 未在真机验证：抓帧对 WebView/SurfaceView 无效（首页仪表盘是 WebView，但其上方的顶栏取样区域
+- ⚠️ **未在真机验证**：抓帧对 WebView/SurfaceView 无效（首页仪表盘是 WebView，但其上方的顶栏取样区域
   是壁纸，不受影响）；低端机上建议先把 `captureIntervalMs` 提到 120–150 ms
 
-首次编译请预留一次"改错"的余地：把 `./gradlew assembleDebug` 的报错贴回来，我按行改。
-最可能出问题的是 `GlassWindows` 里 API 31 的窗口模糊（Lint 可能要求 `@RequiresApi`），
-以及 `GlassDrawable` 的 `getOpacity` 重写签名。
+首版静态核对时漏掉的 4 个错误，都集中在 `GlassDrawable`，已修：
+
+| 位置 | 问题 | 修法 |
+|---|---|---|
+| L118 / L134 | `Drawable.bounds` 是**整型** `Rect`，直接喂给 `LinearGradient(Float,…)` 不成立 | 先 `toFloat()` 取值 |
+| L151 / L154 | `Canvas` 没有"四角独立圆角"的 `drawRoundRect` 重载，只有 `Path.addRoundRect` 有 | 改走 `Path` + `drawPath` |
+
+## 重新构建
+
+完整步骤（含 `ThroneCore.aar` 这个必须先打的核心）见 [BUILD.md](BUILD.md)。
+一句话：这个仓库**不是** `./gradlew assembleDebug` 就能出包的——`app/libs/libbox` 时代早已结束，
+核心是由 Go 侧 `throneproj/Throne` 按 `THRONE_CORE_REF` 用 gomobile 现打 AAR。
+
 
 ## 许可与署名
 

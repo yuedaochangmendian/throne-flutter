@@ -49,6 +49,7 @@ class GlassDrawable @JvmOverloads constructor(
     private val radiusPx = cornerRadiusDp * density
 
     private val path = Path()
+    private val edgePath = Path()
     private val rect = RectF()
     private val edge = RectF()
 
@@ -112,11 +113,15 @@ class GlassDrawable @JvmOverloads constructor(
             }
         }
 
-        // 2. Tint.
+        // 2. Tint. `bounds` is an integer Rect, so the gradient endpoints have to be widened to Float.
+        val left = b.left.toFloat()
+        val top = b.top.toFloat()
+        val right = b.right.toFloat()
+        val bottom = b.bottom.toFloat()
         val key = (b.width() shl 16) xor b.height() xor (b.top * 31)
         if (tintShader == null || gradientKey != key) {
             tintShader = LinearGradient(
-                b.left, b.top, b.left, b.bottom, tintTop, tintBottom, Shader.TileMode.CLAMP
+                left, top, left, bottom, tintTop, tintBottom, Shader.TileMode.CLAMP
             )
             gradientKey = key
         }
@@ -132,7 +137,7 @@ class GlassDrawable @JvmOverloads constructor(
         edge.inset(stroke / 2f, stroke / 2f)
         if (borderShader == null || gradientKey != key) {
             borderShader = LinearGradient(
-                b.left, b.top, b.right, b.bottom,
+                left, top, right, bottom,
                 intArrayOf(borderTop, borderTop and 0x00FFFFFF, borderBottom),
                 floatArrayOf(0f, 0.55f, 1f),
                 Shader.TileMode.CLAMP
@@ -148,13 +153,16 @@ class GlassDrawable @JvmOverloads constructor(
         when (corners) {
             Corners.None -> canvas.drawRect(area, borderPaint)
             Corners.All -> canvas.drawRoundRect(area, r, r, borderPaint)
-            Corners.Top -> canvas.drawRoundRect(
-                area, floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f), borderPaint
-            )
-            Corners.Bottom -> canvas.drawRoundRect(
-                area, floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r), borderPaint
-            )
+            // Canvas has no per-corner-radii overload; that only exists on Path.
+            Corners.Top -> drawPathEdge(canvas, area, floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f))
+            Corners.Bottom -> drawPathEdge(canvas, area, floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r))
         }
+    }
+
+    private fun drawPathEdge(canvas: Canvas, area: RectF, radii: FloatArray) {
+        edgePath.reset()
+        edgePath.addRoundRect(area, radii, Path.Direction.CW)
+        canvas.drawPath(edgePath, borderPaint)
     }
 
     private fun buildPath(r: Float) {
