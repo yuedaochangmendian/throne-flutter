@@ -5,6 +5,9 @@
 
 ![预览](preview/preview.png)
 
+> **已构建好的 APK**：[Releases · v2.0.4-liquidglass](https://github.com/yuedaochangmendian/throne-liquid-glass/releases/tag/v2.0.4-liquidglass)
+> —— debug 签名，arm64-v8a / armeabi-v7a / x86_64 三包。构建过程见 [BUILD.md](BUILD.md)。
+
 ---
 
 ## 先说结论：为什么不是"换个依赖"
