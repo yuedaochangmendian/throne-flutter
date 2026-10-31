@@ -27,6 +27,13 @@ runs:
       with:
         distribution: temurin
         java-version: '17'
+    - name: Android platform and build tools
+      shell: bash
+      run: |
+        set -euo pipefail
+        # compileSdk is 36 for the Flutter AAR; the runner image does not guarantee that platform.
+        echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+        "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list_installed | grep -E "android-36|build-tools;36"
     - name: ThroneCore AAR and schema
       uses: ./.github/actions/throne-core
     - name: Fetch routeprofiles snapshot

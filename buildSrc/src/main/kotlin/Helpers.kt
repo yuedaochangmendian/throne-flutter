@@ -48,8 +48,11 @@ fun Project.updateSignerPin(): String {
 
 fun Project.setupCommon() {
     android.apply {
-        buildToolsVersion = "35.0.1"
-        compileSdk = 35
+        // The Flutter 3.47 AAR and its plugins (androidx.camera 1.6 among them) declare
+        // minCompileSdk 36, so checkOssDebugAarMetadata fails unless the app compiles against 36.
+        // targetSdk stays 35: only the compile target moves, no new runtime behaviour.
+        buildToolsVersion = "36.0.0"
+        compileSdk = 36
         defaultConfig {
             minSdk = 24
             targetSdk = 35
