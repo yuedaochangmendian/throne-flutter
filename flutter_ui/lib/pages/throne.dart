@@ -59,7 +59,7 @@ class SettingChoice<T> extends StatelessWidget {
   final bool autoRestart;
   @override Widget build(BuildContext context) {
     final value = context.box.settings[setting];
-    return ListItem.options<T>(
+    return ListItem<T>.options(
       title: Text(context.tr(title)), options: options, textBuilder: (value) => context.tr(text(value)),
       value: value is T ? value : options.first,
       onChanged: (value) => context.box.setSetting(setting, value, autoRestart: autoRestart),
@@ -79,12 +79,12 @@ class InboundPage extends StatelessWidget {
         SettingToggle('Random inbound port', 'randomInboundPort'),
         SettingToggle('Allow LAN access', 'allowLan', autoRestart: true),
         SettingNumber('DNS inbound port', 'coreDnsInPort', min: 1, max: 65535, autoRestart: true),
-      ], footer: Text(context.tr('These four listeners must use different ports.'))),
+      ], footer: context.tr('These four listeners must use different ports.')),
       generateSection(title: context.tr('Inbound authentication'), items: [
         SettingToggle('Enable authentication', 'inboundAuth', autoRestart: true),
         SettingText('Username', 'inboundUser'),
         SettingText('Password', 'inboundPass'),
-      ], footer: vpnMode ? null : Text(context.tr('Proxy-only service mode always keeps the mixed inbound.'))),
+      ], footer: vpnMode ? null : context.tr('Proxy-only service mode always keeps the mixed inbound.')),
     ]);
   }
 }

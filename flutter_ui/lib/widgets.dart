@@ -9,6 +9,7 @@ export 'box.dart';
 export 'l10n.dart';
 export 'ui/ui.dart';
 export 'ui/icons/icons.dart';
+export 'pages/throne.dart';
 
 class BoxMenu extends StatelessWidget {
   const BoxMenu({super.key, required this.items});

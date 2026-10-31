@@ -1,5 +1,4 @@
 import '../widgets.dart';
-import 'throne.dart';
 
 export 'appearance.dart';
 export 'access.dart';
@@ -54,7 +53,7 @@ class ServiceSettingsPage extends StatelessWidget {
   const ServiceSettingsPage({super.key});
   @override Widget build(BuildContext context) => BoxPage(title: 'Service', loading: context.box.serviceSettingsChanging, children: [
     generateSection(items: [
-      ListItem.options<String>(
+      ListItem<String>.options(
         title: Text(context.tr('Service mode')), options: const ['vpn', 'proxy'],
         value: context.box.settings['serviceMode'] == 'proxy' ? 'proxy' : 'vpn',
         textBuilder: (value) => context.tr(value == 'vpn' ? 'VPN' : 'Proxy only'),
