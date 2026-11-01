@@ -202,13 +202,13 @@
 
 ### 原生界面与新界面的关系
 
-新 Activity **没有**抢占 launcher：ADB 或 `throne://ui` 才能进原生 UI 之外的入口。原因是路由档、自动选择器、WARP 注册、WebDAV 备份这几块还依赖原生页面（见上文第 4 类），一旦把 launcher 换掉就没有回退路径。确认无误后，把 `BboxFlutterActivity` 的 intent-filter 里的 `VIEW` 换成 `MAIN` + `LAUNCHER`、并从 `MainActivity` 摘掉同名 filter 即可切换。
+新 Activity **没有**抢占 launcher：ADB 或 `throneui://open` 才能进原生 UI 之外的入口。原因是路由档、自动选择器、WARP 注册、WebDAV 备份这几块还依赖原生页面（见上文第 4 类），一旦把 launcher 换掉就没有回退路径。确认无误后，把 `BboxFlutterActivity` 的 intent-filter 里的 `VIEW` 换成 `MAIN` + `LAUNCHER`、并从 `MainActivity` 摘掉同名 filter 即可切换。
 
 本地调试：
 
 ```bash
 adb shell am start -n io.nekohasekai.sagernet.debug/io.throne.bbox.flutter.BboxFlutterActivity
-adb shell am start -a android.intent.action.VIEW -d "throne://ui"
+adb shell am start -a android.intent.action.VIEW -d "throneui://open"
 ```
 
 ### ABI 与体积

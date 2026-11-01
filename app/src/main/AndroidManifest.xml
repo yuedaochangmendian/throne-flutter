@@ -80,29 +80,6 @@
             android:exported="true"
             android:launchMode="singleTask">
 
-        <!-- The Flutter interface. Reachable with
-             `adb shell am start -n <package>/io.throne.bbox.flutter.BboxFlutterActivity` or throne://ui.
-             It deliberately keeps its own entry instead of taking the launcher, so the native UI stays available. -->
-        <activity
-            android:name="io.throne.bbox.flutter.BboxFlutterActivity"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:exported="true"
-            android:hardwareAccelerated="true"
-            android:launchMode="singleTop"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data
-                    android:host="ui"
-                    android:scheme="throne" />
-            </intent-filter>
-        </activity>
-
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -207,6 +184,30 @@
                 <data android:scheme="tt" />
                 <data android:scheme="throne" />
                 <data android:scheme="json" />
+            </intent-filter>
+        </activity>
+
+        <!-- The Flutter interface. Reachable with `adb shell am start -n <package>/io.throne.bbox.flutter.BboxFlutterActivity`
+             or throneui://open. It keeps its own entry instead of taking the launcher, so the native UI stays available
+             for the parts only it covers yet: route profiles, auto selector, WARP registration, backups. -->
+        <activity
+            android:name="io.throne.bbox.flutter.BboxFlutterActivity"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:exported="true"
+            android:hardwareAccelerated="true"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <!-- MainActivity already owns throne:// for profile imports, so this uses its own scheme. -->
+                <data
+                    android:host="open"
+                    android:scheme="throneui" />
             </intent-filter>
         </activity>
         <activity
